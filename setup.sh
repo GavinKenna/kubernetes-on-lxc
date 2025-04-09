@@ -1,81 +1,182 @@
 #!/bin/bash
 
-# Usage: ./setup-k8s.sh <number_of_workers>
-NUM_WORKERS=${1:-2}  # Default to 2 if not provided
+set -euo pipefail
+
+# ========== Configuration ==========
+NUM_WORKERS=${1:-2}
 PROFILE="k8s"
 IMAGE="ubuntu:24.04"
 MASTER_NAME="kubernetes-master"
+
+LOG_DIR="logs"
+LOG_FILE="$LOG_DIR/setup.log"
+mkdir -p "$LOG_DIR"
+
 HOST_PRE_REQ_SCRIPT="scripts/host-pre-req-setup.sh"
 NODE_PRE_REQ_SCRIPT="scripts/node-pre-req-setup.sh"
 MASTER_INIT_KUBERNETES_SCRIPT="scripts/master-setup-kubernetes.sh"
 WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT="scripts/worker-node-connect-to-kubernetes.sh"
+INSTALL_TOOLS_SCRIPT="scripts/install-tools.sh"
+TEARDOWN_SCRIPT="scripts/teardown.sh"
 
-# Function to run the pre-requisite setup on a container
-run_pre_req_setup() {
-  NODE_NAME=$1
-  echo "Running pre-req setup on $NODE_NAME..."
-  sudo lxc exec $NODE_NAME -- /bin/bash /install.sh
+
+show_help() {
+  cat <<EOF
+Usage: ./setup.sh [OPTIONS]
+
+This script sets up a Kubernetes cluster with LXC containers as nodes and installs required tools.
+
+Options:
+  -h, --help          Show this help message and exit.
+  -p, --num-workers   Number of worker nodes (default: 2).
+  -i, --install-tools Install necessary tools on the host.
+  -m, --monitoring     Install monitoring stack with Prometheus and Grafana (default: true).
+  -c, --cleanup        Clean up Kubernetes setup (stop and delete containers).
+EOF
 }
 
-echo "Installing tools on host"
-/bin/bash $HOST_PRE_REQ_SCRIPT
+# Default options
+NUM_WORKERS=2
+INSTALL_TOOLS=true
+INSTALL_MONITORING=true
+CLEANUP=false
+INSTALL_HOST_PREREQS=true
 
-# Create master
-echo "Launching master container..."
-sudo lxc launch $IMAGE $MASTER_NAME --profile $PROFILE
-
-# Create worker nodes
-for i in $(seq 1 $NUM_WORKERS); do
-  WORKER_NAME="kubernetes-worker-$i"
-  echo "Launching worker node: $WORKER_NAME..."
-  sudo lxc launch $IMAGE $WORKER_NAME --profile $PROFILE
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -p|--num-workers)
+      NUM_WORKERS=$2
+      shift 2
+      ;;
+    -i|--install-tools)
+      INSTALL_TOOLS=true
+      shift
+      ;;
+    -m|--monitoring)
+      INSTALL_MONITORING=true
+      shift
+      ;;
+    -c|--cleanup)
+      CLEANUP=true
+      shift
+      ;;
+    *)
+      log_error "Unknown option: $1"
+      show_help
+      exit 1
+      ;;
+  esac
 done
 
-echo "Pushing install files to all nodes..."
-sudo lxc file push NODE_PRE_REQ_SCRIPT $MASTER_NAME/install.sh
-sudo lxc file push MASTER_INIT_KUBERNETES_SCRIPT $MASTER_NAME/kubernetes-init.sh
-for i in $(seq 1 $NUM_WORKERS); do
-  WORKER_NAME="kubernetes-worker-$i"
-  sudo lxc file push NODE_PRE_REQ_SCRIPT $WORKER_NAME/install.sh
-  sudo lxc file push WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT $WORKER_NAME/connect.sh
+# ========== Helpers ==========
+log() {
+  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
+}
+
+run_pre_req_setup() {
+  NODE_NAME=$1
+  log "🔧 Running pre-req setup on $NODE_NAME..."
+  sudo lxc exec "$NODE_NAME" -- /bin/bash /install.sh >> "$LOG_FILE" 2>&1 || {
+    log "❌ Failed pre-reqs on $NODE_NAME"
+    exit 1
+  }
+}
+
+# ========== Option Parsing ==========
+for arg in "$@"; do
+  case $arg in
+    --no-host-setup)
+      INSTALL_HOST_PREREQS=false
+      ;;
+    --no-monitoring)
+      INSTALL_MONITORING=false
+      ;;
+    [0-9]*)  # handled by NUM_WORKERS already
+      ;;
+    *)
+      echo "❗ Unknown argument: $arg"
+      echo "Usage: $0 [num_workers] [--no-host-setup] [--no-monitoring]"
+      exit 1
+      ;;
+  esac
 done
 
-# Run pre-req setup on master and worker nodes
-echo "Running install.sh on master node..."
-run_pre_req_setup $MASTER_NAME
+if [ "$CLEANUP" = true ]; then
+  log "🧹 Cleaning up Kubernetes setup..."
+  /bin/bash "$TEARDOWN_SCRIPT" >> "$LOG_FILE" 2>&1
+fi
 
-echo "Running K8s init on master node..."
-sudo lxc exec $MASTER_NAME -- /bin/bash /init.sh
+# ========== Host Setup ==========
+if [ "$INSTALL_HOST_PREREQS" = true ]; then
+  log "🛠️ Installing tools on host..."
+  /bin/bash "$HOST_PRE_REQ_SCRIPT" >> "$LOG_FILE" 2>&1
+else
+  log "⚠️ Skipping host setup as per flag"
+fi
 
-echo "Retrieving kubeconfig from master..."
+# ========== Launch Containers ==========
+log "🚀 Launching master container..."
+sudo lxc launch "$IMAGE" "$MASTER_NAME" --profile "$PROFILE" >> "$LOG_FILE" 2>&1
+
+for i in $(seq 1 "$NUM_WORKERS"); do
+  WORKER_NAME="kubernetes-worker-$i"
+  log "🚀 Launching worker container: $WORKER_NAME"
+  sudo lxc launch "$IMAGE" "$WORKER_NAME" --profile "$PROFILE" >> "$LOG_FILE" 2>&1
+done
+
+# ========== Push Setup Files ==========
+log "📦 Pushing install scripts to all nodes..."
+sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$MASTER_NAME/install.sh"
+sudo lxc file push "$MASTER_INIT_KUBERNETES_SCRIPT" "$MASTER_NAME/init.sh"
+
+for i in $(seq 1 "$NUM_WORKERS"); do
+  WORKER_NAME="kubernetes-worker-$i"
+  sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$WORKER_NAME/install.sh"
+  sudo lxc file push "$WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT" "$WORKER_NAME/connect.sh"
+done
+
+# ========== Setup Master ==========
+log "🔧 Installing Kubernetes on master..."
+run_pre_req_setup "$MASTER_NAME"
+
+log "📦 Running Kubernetes init on master..."
+sudo lxc exec "$MASTER_NAME" -- /bin/bash /init.sh >> "$LOG_FILE" 2>&1
+
+log "📁 Retrieving kubeconfig from master..."
 mkdir -p ~/.kube
-sudo lxc file pull $MASTER_NAME/etc/kubernetes/admin.conf ~/.kube/config
+sudo lxc file pull "$MASTER_NAME/etc/kubernetes/admin.conf" ~/.kube/config
 
-echo "Retrieving cluster join script..."
-sudo lxc file pull $MASTER_NAME/joincluster.sh joincluster.sh
+log "🔐 Retrieving cluster join script from master..."
+sudo lxc file pull "$MASTER_NAME/joincluster.sh" joincluster.sh
 
-echo "Distributing join script to workers..."
-for i in $(seq 1 $NUM_WORKERS); do
+log "📤 Distributing join script to worker nodes..."
+for i in $(seq 1 "$NUM_WORKERS"); do
   WORKER_NAME="kubernetes-worker-$i"
-  sudo lxc file push joincluster.sh $WORKER_NAME/joincluster.sh
+  sudo lxc file push joincluster.sh "$WORKER_NAME/joincluster.sh"
 done
 
-# Run pre-req setup on worker nodes
-echo "Running install.sh on worker nodes..."
-for i in $(seq 1 $NUM_WORKERS); do
+# ========== Setup Workers ==========
+log "🧩 Running pre-req setup on worker nodes..."
+for i in $(seq 1 "$NUM_WORKERS"); do
   WORKER_NAME="kubernetes-worker-$i"
-  run_pre_req_setup $WORKER_NAME
-  echo "Connecting $WORKER_NAME to Cluster"
-  sudo lxc exec $WORKER_NAME -- /bin/bash /connect.sh
+  run_pre_req_setup "$WORKER_NAME"
+  log "🔗 Connecting $WORKER_NAME to cluster..."
+  sudo lxc exec "$WORKER_NAME" -- /bin/bash /connect.sh >> "$LOG_FILE" 2>&1
 done
 
-echo "✅ Kubernetes cluster setup is complete with $NUM_WORKERS worker nodes."
+log "✅ Kubernetes cluster setup complete with $NUM_WORKERS worker nodes."
 
-# Install Monitoring
-echo "Installing Monitoring..."
+# ========== Monitoring ==========
+if [ "$INSTALL_MONITORING" = true ]; then
+  log "📈 Installing monitoring stack (Prometheus + Grafana)..."
+  /bin/bash "$INSTALL_TOOLS_SCRIPT" >> "$LOG_FILE" 2>&1
+else
+  log "⚠️ Skipping monitoring install as per flag"
+fi
 
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-
-kubectl create namespace monitoring
-helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring
+log "🎉 All done!"
