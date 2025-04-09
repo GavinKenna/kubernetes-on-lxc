@@ -1,19 +1,14 @@
 #!/bin/bash
 
+# Source the helpers script which contians the log func
+source "scripts/helpers.sh"
+
 set -euo pipefail
 
 LOG_DIR="logs"
 LOG_FILE="$LOG_DIR/k8s-install.log"
 
 mkdir -p "$LOG_DIR"
-
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
-}
-
-log_error() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | ERROR: $*" | tee -a "$LOG_FILE"
-}
 
 log "🔧 Starting Kubernetes installation..."
 

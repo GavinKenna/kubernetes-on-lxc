@@ -18,6 +18,7 @@ MASTER_INIT_KUBERNETES_SCRIPT="scripts/master-setup-kubernetes.sh"
 WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT="scripts/worker-node-connect-to-kubernetes.sh"
 INSTALL_TOOLS_SCRIPT="scripts/install-tools.sh"
 TEARDOWN_SCRIPT="scripts/teardown.sh"
+HELPERS_SCRIPT="scripts/helpers.sh"
 
 
 show_help() {
@@ -41,6 +42,9 @@ INSTALL_TOOLS=true
 INSTALL_MONITORING=true
 CLEANUP=false
 INSTALL_HOST_PREREQS=true
+
+# Source the helpers script which contians the log func
+source $HELPERS_SCRIPT
 
 # Parse command-line arguments
 while [[ $# -gt 0 ]]; do
@@ -73,11 +77,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ========== Helpers ==========
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
-}
-
 run_pre_req_setup() {
   NODE_NAME=$1
   log "🔧 Running pre-req setup on $NODE_NAME..."
@@ -106,9 +105,17 @@ for arg in "$@"; do
   esac
 done
 
+# Request sudo once so we don't have to ask further down
+sudo -v
+
+# Keep sudo session active throughout the script
+while true; do sudo -v; sleep 60; done &
+
 if [ "$CLEANUP" = true ]; then
   log "🧹 Cleaning up Kubernetes setup..."
   /bin/bash "$TEARDOWN_SCRIPT" >> "$LOG_FILE" 2>&1
+  log "✅ All clean!"
+  exit 0
 fi
 
 # ========== Host Setup ==========
@@ -133,11 +140,15 @@ done
 log "📦 Pushing install scripts to all nodes..."
 sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$MASTER_NAME/install.sh"
 sudo lxc file push "$MASTER_INIT_KUBERNETES_SCRIPT" "$MASTER_NAME/init.sh"
+sudo lxc exec "$MASTER_NAME" -- /bin/bash mkdir scripts
+sudo lxc file push "$HELPERS_SCRIPT" "$MASTER_NAME/scripts/helpers.sh"
 
 for i in $(seq 1 "$NUM_WORKERS"); do
   WORKER_NAME="kubernetes-worker-$i"
   sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$WORKER_NAME/install.sh"
   sudo lxc file push "$WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT" "$WORKER_NAME/connect.sh"
+  sudo lxc exec "$WORKER_NAME" -- /bin/bash mkdir scripts
+  sudo lxc file push "$HELPERS_SCRIPT" "$WORKER_NAME/scripts/helpers.sh"
 done
 
 # ========== Setup Master ==========

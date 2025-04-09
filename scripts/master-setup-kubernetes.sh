@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Source the helpers script which contians the log func
+source "scripts/helpers.sh"
+
 set -euo pipefail
 
 LOG_DIR="logs"
@@ -8,14 +11,6 @@ KUBECONFIG_DIR="$HOME/.kube"
 JOIN_SCRIPT="/joincluster.sh"
 
 mkdir -p "$LOG_DIR"
-
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
-}
-
-log_error() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | ERROR: $*" | tee -a "$LOG_FILE"
-}
 
 log "🔧 Starting Kubernetes initialization..."
 

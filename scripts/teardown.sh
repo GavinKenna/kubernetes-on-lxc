@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Source the helpers script which contians the log func
+source "scripts/helpers.sh"
+
 set -euo pipefail
 
 LOG_DIR="logs"
@@ -7,10 +10,6 @@ LOG_FILE="$LOG_DIR/cleanup.log"
 PROFILE="${1:-k8s}"
 
 mkdir -p "$LOG_DIR"
-
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
-}
 
 stop_and_delete_container() {
   local container=$1

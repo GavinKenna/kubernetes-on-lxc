@@ -1,26 +1,24 @@
 #!/bin/bash
 
+# Source the helpers script which contians the log func
+source "scripts/helpers.sh"
+
 set -euo pipefail
 
 LOG_DIR="./logs"
 LOG_FILE="${LOG_DIR}/host-pre-req-setup-$(date +%Y%m%d-%H%M%S).log"
 
-# ========== Helpers ==========
-log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
-}
-
 mkdir -p "$LOG_DIR"
-echo "📝 Logging output to $LOG_FILE"
+log "📝 Logging output to $LOG_FILE"
 
-echo "🚀 Installing LXD..." | tee -a "$LOG_FILE"
+log "🚀 Installing LXD..."
 if ! snap list | grep -q '^lxd'; then
     sudo snap install lxd >> "$LOG_FILE" 2>&1
 else
-    echo "✅ LXD already installed, skipping." | tee -a "$LOG_FILE"
+    log "✅ LXD already installed, skipping."
 fi
 
-echo "⚙️  Preseeding LXD config..." | tee -a "$LOG_FILE"
+log "⚙️  Preseeding LXD config..."
 cat <<EOF | lxd init --preseed >> "$LOG_FILE" 2>&1
 config: {}
 networks: []
@@ -48,21 +46,21 @@ projects: []
 cluster: null
 EOF
 
-echo "📦 Creating LXD profile 'k8s'..." | tee -a "$LOG_FILE"
+log "📦 Creating LXD profile 'k8s'..."
 if ! lxc profile list | grep -q '^k8s'; then
     lxc profile create k8s >> "$LOG_FILE" 2>&1
 else
-    echo "✅ Profile 'k8s' already exists, skipping." | tee -a "$LOG_FILE"
+    log "✅ Profile 'k8s' already exists, skipping." 
 fi
 
-echo "📤 Applying k8s profile config..." | tee -a "$LOG_FILE"
+log "📤 Applying k8s profile config..." 
 cat k8s-lxc-profile | lxc profile edit k8s >> "$LOG_FILE" 2>&1
 
-echo "🔄 Updating system packages..." | tee -a "$LOG_FILE"
+log "🔄 Updating system packages..." 
 sudo apt update >> "$LOG_FILE" 2>&1
 sudo apt upgrade -y >> "$LOG_FILE" 2>&1
 
-echo "📥 Installing Kubernetes and Helm prerequisites..." | tee -a "$LOG_FILE"
+log "📥 Installing Kubernetes and Helm prerequisites..." 
 sudo apt-get install -y apt-transport-https ca-certificates curl gpg >> "$LOG_FILE" 2>&1
 
 # Add Kubernetes apt repository key, only if it doesn't already exist
@@ -76,20 +74,20 @@ else
   log "ℹ️ Kubernetes apt key already exists. Skipping download."
 fi
 
-echo "📂 Adding Kubernetes APT repo..." | tee -a "$LOG_FILE"
+log "📂 Adding Kubernetes APT repo..." 
 KUBE_LIST="/etc/apt/sources.list.d/kubernetes.list"
 if [ ! -f "$KUBE_LIST" ]; then
-    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | sudo tee "$KUBE_LIST" >> "$LOG_FILE" 2>&1
+    log 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | sudo tee "$KUBE_LIST" >> "$LOG_FILE" 2>&1
 else
-    echo "✅ Kubernetes repo already exists, skipping." | tee -a "$LOG_FILE"
+    log "✅ Kubernetes repo already exists, skipping."
 fi
 
-echo "🔄 Updating package index again..." | tee -a "$LOG_FILE"
+log "🔄 Updating package index again..." 
 sudo apt-get update >> "$LOG_FILE" 2>&1
 
-echo "📦 Installing Helm and kubectl..." | tee -a "$LOG_FILE"
+log "📦 Installing Helm and kubectl..." 
 sudo apt-get install -y kubectl >> "$LOG_FILE" 2>&1
 sudo snap install helm --classic >> "$LOG_FILE" 2>&1
 
-echo "✅ Host setup complete!" | tee -a "$LOG_FILE"
+log "✅ Host setup complete!" 
 

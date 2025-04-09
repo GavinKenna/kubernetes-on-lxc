@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Source the helpers script which contians the log func
+source "scripts/helpers.sh"
+
 set -euo pipefail
 
 LOG_DIR="./logs"
