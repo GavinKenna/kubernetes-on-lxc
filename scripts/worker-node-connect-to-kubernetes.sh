@@ -1,0 +1,1 @@
+bash /joincluster.sh >> /tmp/joincluster.log 2>&1
