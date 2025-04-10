@@ -18,6 +18,9 @@ else
     log "\t\t✅ LXD already installed, skipping."
 fi
 
+# Below is a default config for LXD. I found I needed to do so before creating the k8s profile,
+# especially to use the dir driver instead of the default one (issues cropped up with the lxc containers not being
+# able to download any of the containerd images.
 log "\t⚙️ Preseeding LXD config..."
 cat <<EOF | lxd init --preseed >> "$LOG_FILE" 2>&1
 config: {}
