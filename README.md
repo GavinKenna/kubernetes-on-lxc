@@ -6,11 +6,11 @@ This project automates the setup of a Kubernetes cluster using LXC (Linux Contai
 The scripts ensure the nodes are set up with all necessary prerequisites, the Kubernetes components are installed, and the cluster is initialized. It’s intended for users looking to set up a Kubernetes environment on a local machine using LXC containers for the nodes.
 
 #### Why not use Kind / MiniKube / K3d
-I would **absolutely** recommend you use any of those above tools. This project is just an experpiment I ran for myself for seeing the viability of deploying a cluster on LXC and any limitations I might face. If you're looking to spin up a non-production quality cluster, that runs in LXC, then this is a tool for you!
+I would **absolutely** recommend you use any of those above tools. This project is just an experiment I ran for myself for seeing the viability of deploying a cluster on LXC and any limitations I might face. If you're looking to spin up a non-production quality cluster, that runs in LXC, then this is a tool for you!
 
 ## Notice
 
-This is heavily geared towards a Ubuntu 24.x installation for host, as such the host commands are either 'apt' or 'snap'
+This is heavily geared towards a Ubuntu 24.x installation for host, as such the host commands are either 'apt' or 'snap'. I ran this on a fresh **Ubuntu Server version 24.04.02 LTS**.
 
 ## Features
 
