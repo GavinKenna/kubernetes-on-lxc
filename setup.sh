@@ -80,7 +80,7 @@ done
 run_pre_req_setup() {
   NODE_NAME=$1
   log "🔧 Running pre-req setup on $NODE_NAME..."
-  sudo lxc exec "$NODE_NAME" -- /bin/bash /install.sh >> "$LOG_FILE" 2>&1 || {
+  sudo lxc exec "$NODE_NAME" -- /bin/bash /install.sh 2>&1 | tee -a "$LOG_FILE" || {
     log "❌ Failed pre-reqs on $NODE_NAME"
     exit 1
   }
@@ -113,7 +113,7 @@ while true; do sudo -v; sleep 60; done &
 
 if [ "$CLEANUP" = true ]; then
   log "🧹 Cleaning up Kubernetes setup..."
-  /bin/bash "$TEARDOWN_SCRIPT" >> "$LOG_FILE" 2>&1
+  /bin/bash "$TEARDOWN_SCRIPT"  2>&1 | tee -a "$LOG_FILE"
   log "✅ All clean!"
   exit 0
 fi
@@ -121,7 +121,7 @@ fi
 # ========== Host Setup ==========
 if [ "$INSTALL_HOST_PREREQS" = true ]; then
   log "🛠️ Installing tools on host..."
-  /bin/bash "$HOST_PRE_REQ_SCRIPT" >> "$LOG_FILE" 2>&1
+  /bin/bash "$HOST_PRE_REQ_SCRIPT" 2>&1 | tee -a "$LOG_FILE"
 else
   log "⚠️ Skipping host setup as per flag"
 fi
@@ -140,14 +140,14 @@ done
 log "📦 Pushing install scripts to all nodes..."
 sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$MASTER_NAME/install.sh"
 sudo lxc file push "$MASTER_INIT_KUBERNETES_SCRIPT" "$MASTER_NAME/init.sh"
-sudo lxc exec "$MASTER_NAME" -- /bin/bash mkdir scripts
+sudo lxc exec "$MASTER_NAME" -- mkdir /scripts
 sudo lxc file push "$HELPERS_SCRIPT" "$MASTER_NAME/scripts/helpers.sh"
 
 for i in $(seq 1 "$NUM_WORKERS"); do
   WORKER_NAME="kubernetes-worker-$i"
   sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$WORKER_NAME/install.sh"
   sudo lxc file push "$WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT" "$WORKER_NAME/connect.sh"
-  sudo lxc exec "$WORKER_NAME" -- /bin/bash mkdir scripts
+  sudo lxc exec "$WORKER_NAME" -- mkdir /scripts
   sudo lxc file push "$HELPERS_SCRIPT" "$WORKER_NAME/scripts/helpers.sh"
 done
 
@@ -156,7 +156,7 @@ log "🔧 Installing Kubernetes on master..."
 run_pre_req_setup "$MASTER_NAME"
 
 log "📦 Running Kubernetes init on master..."
-sudo lxc exec "$MASTER_NAME" -- /bin/bash /init.sh >> "$LOG_FILE" 2>&1
+sudo lxc exec "$MASTER_NAME" -- /bin/bash /init.sh 2>&1 | tee -a "$LOG_FILE"
 
 log "📁 Retrieving kubeconfig from master..."
 mkdir -p ~/.kube
@@ -185,7 +185,7 @@ log "✅ Kubernetes cluster setup complete with $NUM_WORKERS worker nodes."
 # ========== Monitoring ==========
 if [ "$INSTALL_MONITORING" = true ]; then
   log "📈 Installing monitoring stack (Prometheus + Grafana)..."
-  /bin/bash "$INSTALL_TOOLS_SCRIPT" >> "$LOG_FILE" 2>&1
+  /bin/bash "$INSTALL_TOOLS_SCRIPT"  2>&1 | tee -a "$LOG_FILE"
 else
   log "⚠️ Skipping monitoring install as per flag"
 fi

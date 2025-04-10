@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Source the helpers script which contians the log func
-source "scripts/helpers.sh"
+source "/scripts/helpers.sh"
 
 set -euo pipefail
 
@@ -12,41 +12,41 @@ JOIN_SCRIPT="/joincluster.sh"
 
 mkdir -p "$LOG_DIR"
 
-log "🔧 Starting Kubernetes initialization..."
+log "\t🔧 Starting Kubernetes initialization..."
 
 # Initialize Kubernetes
-log "🚀 Initializing Kubernetes with kubeadm..."
+log "\t\t🚀 Initializing Kubernetes with kubeadm..."
 if ! kubeadm init --pod-network-cidr=10.244.0.0/16 --ignore-preflight-errors=all >> "$LOG_FILE" 2>&1; then
-  log_error "❌ kubeadm initialization failed. Check the log for details."
+  log_error "\t\t\t❌ kubeadm initialization failed. Check the log for details."
   exit 1
 fi
 
 # Set up kubeconfig for master
-log "📁 Setting up kubeconfig for master..."
+log "\t\t📁 Setting up kubeconfig for master..."
 mkdir -p "$KUBECONFIG_DIR"
 if ! sudo cp -i /etc/kubernetes/admin.conf "$KUBECONFIG_DIR/config"; then
-  log_error "❌ Failed to copy kubeconfig."
+  log_error "\t\t\t❌ Failed to copy kubeconfig."
   exit 1
 fi
 sudo chown "$(id -u):$(id -g)" "$KUBECONFIG_DIR/config" >> "$LOG_FILE" 2>&1
 
 # Install flannel CNI
-log "🌐 Installing Flannel CNI..."
+log "\t\t🌐 Installing Flannel CNI..."
 if ! kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml >> "$LOG_FILE" 2>&1; then
-  log_error "❌ Failed to install Flannel CNI."
+  log_error "\t\t\t❌ Failed to install Flannel CNI."
   exit 1
 fi
 
 # Generate the join command for worker nodes
-log "📝 Generating join command for worker nodes..."
+log "\t\t📝 Generating join command for worker nodes..."
 if ! commandToJoin=$(kubeadm token create --print-join-command 2>/dev/null); then
-  log_error "❌ Failed to generate the kubeadm join command."
+  log_error "\t\t\t❌ Failed to generate the kubeadm join command."
   exit 1
 fi
 
 # Save the join command to a script
-log "💾 Saving join command to $JOIN_SCRIPT..."
+log "\t\t💾 Saving join command to $JOIN_SCRIPT..."
 echo "$commandToJoin --ignore-preflight-errors=all" > "$JOIN_SCRIPT"
 chmod +x "$JOIN_SCRIPT"
 
-log "✅ Kubernetes initialization is complete!"
+log "\t\t✅ Kubernetes initialization is complete!"

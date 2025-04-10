@@ -2,7 +2,7 @@
 
 # ========== Helpers ==========
 log() {
-  echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
+  echo -e "$(date '+%Y-%m-%d %H:%M:%S') | $*" | tee -a "$LOG_FILE"
 }
 
 log_error() {
