@@ -54,7 +54,7 @@ else
 fi
 
 log "\t📤 Applying k8s profile config..."
-cat k8s-lxc-profile | lxc profile edit k8s >> "$LOG_FILE" 2>&1
+cat scripts/k8s-lxc-profile | lxc profile edit k8s >> "$LOG_FILE" 2>&1
 
 log "\t🔄 Updating system packages..."
 sudo apt update >> "$LOG_FILE" 2>&1
