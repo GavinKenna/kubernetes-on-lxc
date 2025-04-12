@@ -7,6 +7,7 @@ set -euo pipefail
 
 LOG_DIR="logs"
 LOG_FILE="$LOG_DIR/k8s-install.log"
+CONFIG_KUBELET_IP="/scripts/configure-kubelet-ip.sh"
 
 mkdir -p "$LOG_DIR"
 
@@ -20,10 +21,13 @@ if ! sudo apt update -qq > "$LOG_FILE" 2>&1 && sudo apt upgrade -y -qq >> "$LOG_
 fi
 
 log "\t\t🔧 Installing prerequisites: apt-transport-https, ca-certificates, curl, gpg..."
-if ! sudo apt-get install -y apt-transport-https ca-certificates curl gpg >> "$LOG_FILE" 2>&1; then
+if ! sudo apt-get install -y apt-transport-https ca-certificates curl gpg docker.io >> "$LOG_FILE" 2>&1; then
   log_error "\t\t\t❌ Failed to install required packages."
   exit 1
 fi
+
+sudo systemctl enable docker
+sudo systemctl start docker
 
 # Add Kubernetes apt repository
 log "\t\t🔧 Adding Kubernetes apt repository key..."
@@ -115,5 +119,7 @@ if ! sudo service kubelet restart >> "$LOG_FILE" 2>&1; then
   log_error "\t\t\t❌ Failed to restart kubelet."
   exit 1
 fi
+
+#bash "$CONFIG_KUBELET_IP"
 
 log "\t\t✅ Kubernetes installation is complete!"

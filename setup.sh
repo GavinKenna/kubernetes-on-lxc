@@ -19,7 +19,8 @@ WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT="scripts/worker-node-connect-to-kuberne
 INSTALL_TOOLS_SCRIPT="scripts/install-tools.sh"
 TEARDOWN_SCRIPT="scripts/teardown.sh"
 HELPERS_SCRIPT="scripts/helpers.sh"
-
+REGISTRY_SCRIPT="scripts/setup-local-registry.sh"  # Registry setup script
+CONFIG_KUBELET_IP="scripts/configure-kubelet-ip.sh"
 
 show_help() {
   cat <<EOF
@@ -84,7 +85,30 @@ run_pre_req_setup() {
     log "❌ Failed pre-reqs on $NODE_NAME"
     exit 1
   }
+
+  # Workaround for an issue I notice when restarting the LXC containers -- kubectl won't start back up
+ log "📎 Ensuring /dev/kmsg device is attached to $NODE_NAME"
+
+ if ! lxc config show "$NODE_NAME" | grep -q "kmsg:"; then
+   if lxc config device add "$NODE_NAME" kmsg unix-char source=/dev/kmsg path=/dev/kmsg >> "$LOG_FILE" 2>&1; then
+     log "✅ /dev/kmsg device added to $NODE_NAME"
+   else
+     log_error "❌ Failed to configure kmsg device on $NODE_NAME"
+     exit 1
+   fi
+ else
+   log "ℹ️  /dev/kmsg device already present on $NODE_NAME"
+ fi
 }
+
+ run_post_setup() {
+    NODE_NAME=$1
+    log "🔧 Running post setup on $NODE_NAME..."
+    sudo lxc exec "$NODE_NAME" -- /bin/bash /scripts/configure-kubelet-ip.sh 2>&1 | tee -a "$LOG_FILE" || {
+      log "❌ Failed post setup on $NODE_NAME"
+      exit 1
+    }
+    }
 
 # ========== Option Parsing ==========
 for arg in "$@"; do
@@ -130,8 +154,10 @@ fi
 log "🚀 Launching master container..."
 sudo lxc launch "$IMAGE" "$MASTER_NAME" --profile "$PROFILE" >> "$LOG_FILE" 2>&1
 
+worker_nodes=()  # Array to store worker node names
 for i in $(seq 1 "$NUM_WORKERS"); do
   WORKER_NAME="kubernetes-worker-$i"
+  worker_nodes+=("$WORKER_NAME")  # Add worker node to the array
   log "🚀 Launching worker container: $WORKER_NAME"
   sudo lxc launch "$IMAGE" "$WORKER_NAME" --profile "$PROFILE" >> "$LOG_FILE" 2>&1
 done
@@ -142,13 +168,14 @@ sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$MASTER_NAME/install.sh"
 sudo lxc file push "$MASTER_INIT_KUBERNETES_SCRIPT" "$MASTER_NAME/init.sh"
 sudo lxc exec "$MASTER_NAME" -- mkdir /scripts
 sudo lxc file push "$HELPERS_SCRIPT" "$MASTER_NAME/scripts/helpers.sh"
+sudo lxc file push "$CONFIG_KUBELET_IP" "$MASTER_NAME/scripts/configure-kubelet-ip.sh"
 
-for i in $(seq 1 "$NUM_WORKERS"); do
-  WORKER_NAME="kubernetes-worker-$i"
+for WORKER_NAME in "${worker_nodes[@]}"; do
   sudo lxc file push "$NODE_PRE_REQ_SCRIPT" "$WORKER_NAME/install.sh"
   sudo lxc file push "$WORKER_NODE_CONNECT_TO_KUBERNETES_SCRIPT" "$WORKER_NAME/connect.sh"
   sudo lxc exec "$WORKER_NAME" -- mkdir /scripts
   sudo lxc file push "$HELPERS_SCRIPT" "$WORKER_NAME/scripts/helpers.sh"
+  sudo lxc file push "$CONFIG_KUBELET_IP" "$WORKER_NAME/scripts/configure-kubelet-ip.sh"
 done
 
 # ========== Setup Master ==========
@@ -166,21 +193,39 @@ log "🔐 Retrieving cluster join script from master..."
 sudo lxc file pull "$MASTER_NAME/joincluster.sh" joincluster.sh
 
 log "📤 Distributing join script to worker nodes..."
-for i in $(seq 1 "$NUM_WORKERS"); do
-  WORKER_NAME="kubernetes-worker-$i"
+for WORKER_NAME in "${worker_nodes[@]}"; do
   sudo lxc file push joincluster.sh "$WORKER_NAME/joincluster.sh"
 done
 
 # ========== Setup Workers ==========
 log "🧩 Running pre-req setup on worker nodes..."
-for i in $(seq 1 "$NUM_WORKERS"); do
-  WORKER_NAME="kubernetes-worker-$i"
+for WORKER_NAME in "${worker_nodes[@]}"; do
   run_pre_req_setup "$WORKER_NAME"
   log "🔗 Connecting $WORKER_NAME to cluster..."
   sudo lxc exec "$WORKER_NAME" -- /bin/bash /connect.sh >> "$LOG_FILE" 2>&1
 done
 
 log "✅ Kubernetes cluster setup complete with $NUM_WORKERS worker nodes."
+
+log "🧩 Adding registry to work with..."
+
+# ========== Setup Docker Registry ==========
+log "📦 Setting up Docker registry..."
+# Pass the master node and each worker node with the --node flag
+args=()
+args+=("--node" "$MASTER_NAME")  # Ensure the master node is also passed with --node
+for node in "${worker_nodes[@]}"; do
+  args+=("--node" "$node")
+done
+
+# Now call the registry script with the updated arguments
+/bin/bash "$REGISTRY_SCRIPT" "${args[@]}"
+
+# ========== Setup networking correcting ==========
+log "🧩 Setting up networking correctly on worker nodes..."
+for WORKER_NAME in "${worker_nodes[@]}"; do
+  run_post_setup "$WORKER_NAME"
+done
 
 # ========== Monitoring ==========
 if [ "$INSTALL_MONITORING" = true ]; then

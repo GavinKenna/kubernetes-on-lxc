@@ -1,0 +1,23 @@
+[ req ]
+default_bits        = 2048
+default_keyfile     = privkey.pem
+distinguished_name  = req_distinguished_name
+req_extensions      = v3_req
+prompt = no
+
+[ req_distinguished_name ]
+C  = US
+ST = CA
+L  = San Francisco
+O  = Example Corp
+OU = Example Unit
+#CN = example.com  # Replace with your common name if needed
+
+[ v3_req ]
+keyUsage = keyEncipherment, digitalSignature
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+IP.1 = 192.168.88.23  # Replace with the actual IP address of the registry
+DNS.1 = 192.168.88.23  # Optional DNS name (if using DNS resolution)
